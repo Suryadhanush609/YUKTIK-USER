@@ -24,6 +24,7 @@ export default function MyEmergencies() {
   const [error, setError] = useState('');
   const [ambulancesMap, setAmbulancesMap] = useState({});
   const [hospitalsMap, setHospitalsMap] = useState({});
+  const [resourcesMap, setResourcesMap] = useState({});
   const [wsConnected, setWsConnected] = useState(false);
 
   const reporterId = getReporterId();
@@ -32,17 +33,16 @@ export default function MyEmergencies() {
     setLoading(true);
     setError('');
     try {
-      // 1. Fetch user submitted IDs from local session
       const userIncidentIds = getUserIncidentIds();
 
-      // 2. Query backend for incidents
-      const [incRes, ambRes, hospRes] = await Promise.all([
-        api.get('/incidents'),
+      // Query backend for incidents filtered by reporter_id + lookup resources
+      const [incRes, ambRes, hospRes, resRes] = await Promise.all([
+        api.get(`/incidents?reporter_id=${encodeURIComponent(reporterId)}`),
         api.get('/ambulances'),
         api.get('/hospitals'),
+        api.get('/resources'),
       ]);
 
-      // Create lookup dicts
       const ambMap = {};
       (ambRes.data || []).forEach((a) => {
         ambMap[a.id] = a;
@@ -55,10 +55,20 @@ export default function MyEmergencies() {
       });
       setHospitalsMap(hospMap);
 
-      // Filter only user's incidents
-      const allIncidents = incRes.data || [];
-      const userOnly = allIncidents.filter((inc) => userIncidentIds.includes(inc.id));
-      setIncidents(userOnly);
+      const rMap = {};
+      (resRes.data || []).forEach((r) => {
+        rMap[r.id] = r;
+      });
+      setResourcesMap(rMap);
+
+      let fetched = incRes.data || [];
+      // If backend returned empty but user has local stored incident IDs, fetch all and filter
+      if (fetched.length === 0 && userIncidentIds.length > 0) {
+        const allRes = await api.get('/incidents');
+        fetched = (allRes.data || []).filter((inc) => userIncidentIds.includes(inc.id));
+      }
+
+      setIncidents(fetched);
     } catch (err) {
       console.error('Failed to load user emergencies:', err);
       setError('Unable to reach emergency database. Retrying...');
@@ -194,26 +204,16 @@ export default function MyEmergencies() {
                 </p>
 
                 {/* Details Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-rose-500 flex-shrink-0" />
-                    <div>
-                      <span className="text-gray-400 block">Location Coordinates</span>
-                      <span className="font-mono text-gray-200">
-                        {incident.latitude != null ? incident.latitude.toFixed(4) : '—'}, {incident.longitude != null ? incident.longitude.toFixed(4) : '—'}
-                      </span>
-                    </div>
-                  </div>
-
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80">
                   <div className="flex items-center gap-2">
                     <Ambulance className="w-4 h-4 text-blue-400 flex-shrink-0" />
                     <div>
-                      <span className="text-gray-400 block">Assigned Ambulance</span>
+                      <span className="text-gray-400 block">Ambulance</span>
                       <span className="font-semibold text-white">
-                        {amb ? `${amb.unit_number} (${amb.status})` : 'Dispatching unit...'}
+                        {amb ? `${amb.unit_number}` : 'Standby / Queueing'}
                       </span>
                       {amb && amb.driver_name && (
-                        <span className="text-gray-400 block text-[11px]">Driver: {amb.driver_name}</span>
+                        <span className="text-gray-400 block text-[11px]">Pilot: {amb.driver_name}</span>
                       )}
                     </div>
                   </div>
@@ -221,14 +221,44 @@ export default function MyEmergencies() {
                   <div className="flex items-center gap-2">
                     <Building2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                     <div>
-                      <span className="text-gray-400 block">Assigned Hospital</span>
-                      <span className="font-semibold text-white">
-                        {hosp ? hosp.name : 'Selecting nearest ER...'}
+                      <span className="text-gray-400 block">Receiving Hospital</span>
+                      <span className="font-semibold text-white truncate block max-w-[160px]" title={hosp?.name}>
+                        {hosp ? hosp.name : 'Designating ER...'}
                       </span>
                       {hosp && (
-                        <span className="text-gray-400 block text-[11px] truncate">
-                          {hosp.address}
+                        <span className="text-emerald-400 block text-[11px]">
+                          {hosp.icu_available} ICU beds open
                         </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                    <div>
+                      <span className="text-gray-400 block">Fire Service</span>
+                      <span className="font-semibold text-white">
+                        {incident.assigned_fire_engine_id && resourcesMap[incident.assigned_fire_engine_id]
+                          ? resourcesMap[incident.assigned_fire_engine_id].unit_code
+                          : 'Not Required'}
+                      </span>
+                      {incident.assigned_fire_engine_id && resourcesMap[incident.assigned_fire_engine_id] && (
+                        <span className="text-amber-400 block text-[11px]">Dispatched</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Radio className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                    <div>
+                      <span className="text-gray-400 block">Police Perimeter</span>
+                      <span className="font-semibold text-white">
+                        {incident.assigned_police_vehicle_id && resourcesMap[incident.assigned_police_vehicle_id]
+                          ? resourcesMap[incident.assigned_police_vehicle_id].unit_code
+                          : 'Patrol Active'}
+                      </span>
+                      {incident.assigned_police_vehicle_id && resourcesMap[incident.assigned_police_vehicle_id] && (
+                        <span className="text-indigo-400 block text-[11px]">Escort Dispatched</span>
                       )}
                     </div>
                   </div>

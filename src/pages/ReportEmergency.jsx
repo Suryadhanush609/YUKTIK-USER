@@ -16,13 +16,16 @@ import {
 import api from '../services/api';
 import { getCurrentLocation } from '../services/location';
 import { createSpeechRecognition, isSpeechRecognitionSupported } from '../services/speech';
-import { saveUserIncident } from '../utils/session';
+import { saveUserIncident, getReporterId } from '../utils/session';
 
 const CATEGORIES = [
-  { value: 'medical', label: 'Medical Emergency (Heart, Trauma, Stroke)' },
-  { value: 'accident', label: 'Road / Vehicle Accident' },
-  { value: 'fire', label: 'Fire Outbreak / Explosion' },
-  { value: 'disaster', label: 'Natural Disaster / Flood / Collapse' },
+  { value: 'medical', label: 'Medical Emergency (Trauma / Stroke / Severe Illness)' },
+  { value: 'cardiac', label: 'Cardiac Arrest / Chest Pain / Heart Failure' },
+  { value: 'accident', label: 'Road / Highway Vehicle Collision' },
+  { value: 'fire', label: 'Fire Outbreak / Chemical Smoke' },
+  { value: 'flood', label: 'Flooding / Musi River Water Inundation' },
+  { value: 'collapse', label: 'Structural Collapse / Building Entrapment' },
+  { value: 'crime', label: 'Assault / Armed Violence / Crime' },
   { value: 'other', label: 'Other Urgent Crisis' },
 ];
 
@@ -32,8 +35,8 @@ export default function ReportEmergency() {
   const [description, setDescription] = useState('');
   const [incidentType, setIncidentType] = useState('medical');
   const [affectedPeople, setAffectedPeople] = useState(1);
-  const [latitude, setLatitude] = useState(12.9716); // Default Bangalore Center
-  const [longitude, setLongitude] = useState(77.5946);
+  const [latitude, setLatitude] = useState(17.3850); // Default Hyderabad Central
+  const [longitude, setLongitude] = useState(78.4867);
   const [locating, setLocating] = useState(false);
   const [locSuccess, setLocSuccess] = useState(false);
   const [imageFile, setImageFile] = useState(null);
@@ -129,6 +132,7 @@ export default function ReportEmergency() {
     try {
       // Backend expects multipart/form-data: incident_type, description, latitude, longitude, affected_people, image
       const formData = new FormData();
+      formData.append('reporter_id', getReporterId());
       formData.append('incident_type', incidentType);
       formData.append('description', description.trim());
       formData.append('latitude', String(latitude));
@@ -205,34 +209,71 @@ export default function ReportEmergency() {
           </div>
 
           {(classification?.classification_reason || classification?.reason) && (
-            <div className="p-3 bg-purple-950/30 border border-purple-800/40 rounded-xl text-xs text-purple-300">
-              <span className="font-semibold text-purple-200">AI Analysis: </span>
-              {classification.classification_reason || classification.reason}
+            <div className="p-3.5 bg-purple-950/40 border border-purple-800/50 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-purple-200 text-xs">AI Triage Assessment</span>
+                {classification?.confidence && (
+                  <span className="text-xs bg-purple-900/60 text-purple-300 px-2 py-0.5 rounded-full font-mono">
+                    {Math.round(classification.confidence * 100)}% Confidence
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-purple-300 leading-relaxed">
+                {classification.classification_reason || classification.reason}
+              </p>
+              {classification?.required_responders && classification.required_responders.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  <span className="text-[11px] text-gray-400">Required Services:</span>
+                  {classification.required_responders.map((res) => (
+                    <span key={res} className="text-[11px] bg-slate-800 text-gray-200 px-2 py-0.5 rounded border border-slate-700 capitalize font-medium">
+                      {res.replace('_', ' ')}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
           {alloc && (
-            <div className="bg-slate-800/80 p-4 rounded-xl space-y-2 border border-slate-700">
-              <h4 className="text-sm font-semibold text-gray-200">Dispatched Resources:</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-                <div>
+            <div className="bg-slate-800/80 p-4 rounded-xl space-y-3 border border-slate-700">
+              <h4 className="text-sm font-semibold text-gray-200">Dispatched Emergency Grid:</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                <div className="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
                   <span className="text-gray-400 block text-xs">Ambulance</span>
-                  <span className="font-semibold text-white">
-                    {alloc.ambulance_id ? `Ambulance #${alloc.ambulance_id}` : 'Queueing nearest unit'}
+                  <span className="font-semibold text-white text-xs">
+                    {alloc.ambulance_id ? `Unit #${alloc.ambulance_id}` : 'Standby'}
                   </span>
                 </div>
-                <div>
-                  <span className="text-gray-400 block text-xs">Hospital</span>
-                  <span className="font-semibold text-white">
-                    {alloc.hospital_id ? `Hospital #${alloc.hospital_id}` : 'Assigning nearest ER'}
+                <div className="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                  <span className="text-gray-400 block text-xs">Fire Tender</span>
+                  <span className="font-semibold text-amber-400 text-xs">
+                    {alloc.fire_engine_id ? `Fire Unit #${alloc.fire_engine_id}` : 'Not Required'}
                   </span>
                 </div>
-                <div>
-                  <span className="text-gray-400 block text-xs">Estimated ETA</span>
-                  <span className="font-semibold text-emerald-400">
-                    {alloc.estimated_time_minutes ? `${alloc.estimated_time_minutes} minutes` : 'En route'}
+                <div className="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                  <span className="text-gray-400 block text-xs">Police Patrol</span>
+                  <span className="font-semibold text-blue-400 text-xs">
+                    {alloc.police_vehicle_id ? `Police #${alloc.police_vehicle_id}` : 'Monitoring'}
                   </span>
                 </div>
+                <div className="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                  <span className="text-gray-400 block text-xs">Receiving Hospital</span>
+                  <span className="font-semibold text-emerald-400 text-xs truncate block" title={alloc.hospital_id ? `Hospital #${alloc.hospital_id}` : 'Designated'}>
+                    {alloc.hospital_id ? `Hospital #${alloc.hospital_id}` : 'Designating'}
+                  </span>
+                </div>
+              </div>
+
+              {alloc.allocation_reason && (
+                <div className="p-2.5 bg-slate-900/90 rounded-lg text-xs text-gray-300 border border-slate-800">
+                  <span className="text-gray-400 font-semibold block mb-0.5">Coordination Routing:</span>
+                  {alloc.allocation_reason}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between text-xs text-gray-400 pt-1">
+                <span>Distance: <strong className="text-white">{alloc.distance_km} km</strong></span>
+                <span>Calculated Road ETA: <strong className="text-emerald-400 font-bold">{alloc.estimated_time_minutes} min</strong></span>
               </div>
             </div>
           )}

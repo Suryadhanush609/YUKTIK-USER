@@ -28,7 +28,7 @@ export default function Home() {
   const [location, setLocation] = useState(null);
   const [locationStatus, setLocationStatus] = useState('Detecting...');
   const [activeIncident, setActiveIncident] = useState(null);
-  const [counts, setCounts] = useState({ hospitals: 0, ambulances: 0, beds: 0 });
+  const [counts, setCounts] = useState({ hospitals: 0, ambulances: 0, beds: 0, stations: 10 });
   const [loading, setLoading] = useState(true);
 
   const fetchActiveIncident = async () => {
@@ -53,19 +53,22 @@ export default function Home() {
 
   const fetchServiceOverview = async () => {
     try {
-      const [hospRes, ambRes] = await Promise.all([
+      const [hospRes, ambRes, stnRes] = await Promise.all([
         api.get('/hospitals').catch(() => ({ data: [] })),
         api.get('/ambulances').catch(() => ({ data: [] })),
+        api.get('/stations').catch(() => ({ data: [] })),
       ]);
 
       const hosps = hospRes.data || [];
       const ambs = ambRes.data || [];
+      const stns = stnRes.data || [];
       const totalBeds = hosps.reduce((acc, h) => acc + (h.available_beds || 0), 0);
 
       setCounts({
         hospitals: hosps.length,
         ambulances: ambs.filter((a) => a.status === 'available').length,
         beds: totalBeds,
+        stations: stns.length || 10,
       });
     } catch (e) {
       console.error(e);
@@ -82,8 +85,8 @@ export default function Home() {
         setLocationStatus('GPS Active');
       })
       .catch(() => {
-        setLocationStatus('Default Area (Bangalore)');
-        setLocation({ lat: 12.9716, lng: 77.5946 });
+        setLocationStatus('Default Area (Hyderabad Central)');
+        setLocation({ lat: 17.3850, lng: 78.4867 });
       });
 
     // 2. Fetch data
@@ -267,7 +270,7 @@ export default function Home() {
             <div className="p-2.5 rounded-xl bg-rose-950/60 text-rose-400 w-fit mb-3 border border-rose-800/40">
               <Flame className="w-5 h-5" />
             </div>
-            <span className="text-2xl font-bold text-white block">4</span>
+            <span className="text-2xl font-bold text-white block">{counts.stations}</span>
             <span className="text-xs text-gray-400">Fire & Police Stations</span>
           </div>
         </div>

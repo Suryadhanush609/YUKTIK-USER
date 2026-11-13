@@ -37,14 +37,15 @@ export default function MapView({ userPos, services = [] }) {
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
-    const initialLat = userPos?.lat || 12.9716;
-    const initialLng = userPos?.lng || 77.5946;
+    // Default to Hyderabad Central coordinates
+    const initialLat = userPos?.lat || 17.3850;
+    const initialLng = userPos?.lng || 78.4867;
 
     if (!mapInstanceRef.current) {
       const map = L.map(mapContainerRef.current).setView([initialLat, initialLng], 12);
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
+        attribution: '&copy; OpenStreetMap contributors | YUKTIK 2026',
         maxZoom: 19,
       }).addTo(map);
 
@@ -61,10 +62,10 @@ export default function MapView({ userPos, services = [] }) {
     // 1. Plot User Marker
     if (userPos && userPos.lat && userPos.lng) {
       const userMarker = L.marker([userPos.lat, userPos.lng], {
-        icon: createColorPin('#ef4444', 'YOU'),
+        icon: createColorPin('#dc2626', 'YOU'),
       }).bindPopup(`
         <div style="color: #0f172a; font-family: sans-serif; font-size: 12px; line-height: 1.4;">
-          <strong style="color: #ef4444;">Your Detected Location</strong><br/>
+          <strong style="color: #dc2626;">Your Location</strong><br/>
           Lat: ${userPos.lat.toFixed(4)}<br/>
           Lon: ${userPos.lng.toFixed(4)}
         </div>
@@ -88,26 +89,33 @@ export default function MapView({ userPos, services = [] }) {
         color = '#f59e0b'; // amber
         label = 'A';
       } else if (cat === 'fire') {
-        color = '#ef4444'; // red
+        color = '#ea580c'; // orange
         label = 'F';
       } else if (cat === 'police') {
-        color = '#6366f1'; // indigo
+        color = '#4f46e5'; // indigo
         label = 'P';
+      } else if (cat === 'rescue') {
+        color = '#9333ea'; // purple
+        label = 'R';
       }
 
-      const isSimulated = s.is_simulated || s.category === 'Fire' || s.category === 'Police';
+      const isSimulated = s.is_simulated || String(s.id).startsWith('sim-') || String(s.id).startsWith('res-');
 
       const popupHtml = `
-        <div style="color: #0f172a; font-family: sans-serif; font-size: 12px; line-height: 1.4; min-width: 140px;">
-          <strong style="font-size: 13px; color: #1e293b;">${s.name || s.unit_number || 'Service'}</strong><br/>
+        <div style="color: #0f172a; font-family: sans-serif; font-size: 12px; line-height: 1.4; min-width: 150px;">
+          <strong style="font-size: 13px; color: #0f172a;">${s.name || s.unit_number || 'Service'}</strong><br/>
           <span style="display: inline-block; padding: 2px 6px; border-radius: 4px; background: #e2e8f0; font-weight: 600; font-size: 10px; margin: 3px 0;">
             ${s.category}
           </span>
-          ${isSimulated ? '<br/><span style="color: #9333ea; font-size: 10px; font-weight: bold;">[Simulated Unit]</span>' : '<br/><span style="color: #059669; font-size: 10px; font-weight: bold;">[Live Resource]</span>'}
-          ${s.address ? `<br/>${s.address}` : ''}
-          ${s.total_beds ? `<br/>Available Beds: <strong>${s.available_beds}/${s.total_beds}</strong>` : ''}
-          ${s.driver_name ? `<br/>Driver: ${s.driver_name}` : ''}
-          ${s.distance_km ? `<br/>Distance: <strong>${s.distance_km} km</strong>` : ''}
+          ${isSimulated
+            ? '<br/><span style="color: #9333ea; font-size: 10px; font-weight: bold; background: #f3e8ff; padding: 1px 4px; border-radius: 3px;">[SIMULATED FLEET]</span>'
+            : '<br/><span style="color: #059669; font-size: 10px; font-weight: bold; background: #d1fae5; padding: 1px 4px; border-radius: 3px;">[VERIFIED HYDERABAD]</span>'
+          }
+          ${s.address ? `<br/><span style="color: #475569;">${s.address}</span>` : ''}
+          ${s.total_beds ? `<br/>Available Beds: <strong>${s.available_beds}/${s.total_beds}</strong> (ICU: <strong>${s.icu_available || 0}</strong>)` : ''}
+          ${s.phone ? `<br/>Contact: <strong>${s.phone}</strong>` : ''}
+          ${s.driver_name ? `<br/>Pilot: ${s.driver_name}` : ''}
+          ${s.distance_km != null ? `<br/>Distance: <strong>${s.distance_km} km</strong>` : ''}
         </div>
       `;
 
@@ -124,18 +132,16 @@ export default function MapView({ userPos, services = [] }) {
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
     }
 
-    return () => {
-      // Keep map alive or clean up on unmount
-    };
+    return () => {};
   }, [userPos, services]);
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
       <div className="p-3 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center justify-between text-xs text-gray-300 gap-2">
-        <span className="font-semibold text-white">Live Tactical Map</span>
-        <div className="flex items-center gap-3">
+        <span className="font-semibold text-white">Hyderabad Emergency Tactical Map</span>
+        <div className="flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span> You
+            <span className="w-2.5 h-2.5 rounded-full bg-red-600"></span> Citizen
           </span>
           <span className="flex items-center gap-1">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Hospital
@@ -144,7 +150,13 @@ export default function MapView({ userPos, services = [] }) {
             <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Ambulance
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span> Simulated
+            <span className="w-2.5 h-2.5 rounded-full bg-orange-600"></span> Fire
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span> Police
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-purple-600"></span> SDRF Rescue
           </span>
         </div>
       </div>
@@ -152,4 +164,3 @@ export default function MapView({ userPos, services = [] }) {
     </div>
   );
 }
-

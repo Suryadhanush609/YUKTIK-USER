@@ -16,51 +16,6 @@ import { getCurrentLocation } from '../services/location';
 import ServiceCard from '../components/ServiceCard';
 import MapView from '../components/MapView';
 
-// Real backend provides hospitals and ambulances.
-// We complement with clearly labeled simulated fire/police stations per guidelines.
-const SIMULATED_SERVICES = [
-  {
-    id: 'sim-fire-1',
-    name: 'Indiranagar Fire & Rescue HQ',
-    category: 'Fire',
-    latitude: 12.9784,
-    longitude: 77.6408,
-    phone: '101',
-    address: '100 Feet Rd, HAL 2nd Stage, Indiranagar, Bangalore',
-    is_simulated: true,
-  },
-  {
-    id: 'sim-fire-2',
-    name: 'Koramangala Fire Station',
-    category: 'Fire',
-    latitude: 12.9352,
-    longitude: 77.6245,
-    phone: '101',
-    address: '80 Feet Rd, 4th Block, Koramangala, Bangalore',
-    is_simulated: true,
-  },
-  {
-    id: 'sim-police-1',
-    name: 'Cubbon Park Central Police Command',
-    category: 'Police',
-    latitude: 12.9767,
-    longitude: 77.5913,
-    phone: '112',
-    address: 'Kasturba Rd, Sampangi Rama Nagara, Bangalore',
-    is_simulated: true,
-  },
-  {
-    id: 'sim-police-2',
-    name: 'Ashok Nagar Police Station',
-    category: 'Police',
-    latitude: 12.9698,
-    longitude: 77.6050,
-    phone: '112',
-    address: 'Commissariat Rd, Ashok Nagar, Bangalore',
-    is_simulated: true,
-  },
-];
-
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371; // km
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -78,7 +33,7 @@ function haversine(lat1, lon1, lat2, lon2) {
 export default function NearbyHelp() {
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [userPos, setUserPos] = useState({ lat: 12.9716, lng: 77.5946 }); // Default Bangalore Center
+  const [userPos, setUserPos] = useState({ lat: 17.3850, lng: 78.4867 }); // Default Hyderabad Center
   const [gpsDetected, setGpsDetected] = useState(false);
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -86,8 +41,8 @@ export default function NearbyHelp() {
 
   // Manual coordinate input states
   const [showManual, setShowManual] = useState(false);
-  const [manualLat, setManualLat] = useState('12.9716');
-  const [manualLng, setManualLng] = useState('77.5946');
+  const [manualLat, setManualLat] = useState('17.3850');
+  const [manualLng, setManualLng] = useState('78.4867');
 
   const detectLocation = () => {
     setLoading(true);
@@ -110,9 +65,11 @@ export default function NearbyHelp() {
   const loadAllServices = async (lat, lon) => {
     setLoading(true);
     try {
-      const [hospRes, ambRes] = await Promise.all([
+      const [hospRes, ambRes, stnRes, resRes] = await Promise.all([
         api.get('/hospitals', { params: { lat, lon } }).catch(() => ({ data: [] })),
         api.get('/ambulances', { params: { lat, lon } }).catch(() => ({ data: [] })),
+        api.get('/stations', { params: { lat, lon } }).catch(() => ({ data: [] })),
+        api.get('/resources', { params: { lat, lon } }).catch(() => ({ data: [] })),
       ]);
 
       const formattedHospitals = (hospRes.data || []).map((h) => ({
@@ -124,18 +81,54 @@ export default function NearbyHelp() {
 
       const formattedAmbulances = (ambRes.data || []).map((a) => ({
         ...a,
-        name: `${a.unit_number} (${a.status})`,
+        name: `EMRI 108 — ${a.unit_number}`,
         category: 'Ambulance',
         distance_km: a.distance_km ?? haversine(lat, lon, a.latitude, a.longitude),
         is_simulated: false,
       }));
 
-      const formattedSim = SIMULATED_SERVICES.map((s) => ({
-        ...s,
-        distance_km: haversine(lat, lon, s.latitude, s.longitude),
-      }));
+      const formattedStations = (stnRes.data || []).map((stn) => {
+        const isFire = stn.station_type === 'fire_station';
+        return {
+          id: `station-${stn.id}`,
+          name: stn.station_name,
+          category: isFire ? 'Fire' : 'Police',
+          latitude: stn.latitude,
+          longitude: stn.longitude,
+          phone: stn.contact_phone || (isFire ? '101' : '100'),
+          address: `${stn.address} (${stn.division || 'Hyderabad'})`,
+          distance_km: stn.distance_km ?? haversine(lat, lon, stn.latitude, stn.longitude),
+          is_simulated: false,
+        };
+      });
 
-      setServices([...formattedHospitals, ...formattedAmbulances, ...formattedSim]);
+      const formattedResources = (resRes.data || [])
+        .filter((r) => r.resource_type !== 'ambulance') // avoid duplicating ambulances
+        .map((r) => {
+          let cat = 'Police';
+          if (r.resource_type === 'fire_engine') cat = 'Fire';
+          else if (r.resource_type === 'rescue_unit') cat = 'Rescue';
+
+          return {
+            id: `res-${r.id}`,
+            name: `${r.unit_code} (${r.operational_capability || r.department})`,
+            category: cat,
+            latitude: r.latitude,
+            longitude: r.longitude,
+            phone: r.contact_number || '112',
+            address: `Base: ${r.home_station_name || 'Hyderabad Command'}`,
+            driver_name: r.driver_pilot_name,
+            distance_km: haversine(lat, lon, r.latitude, r.longitude),
+            is_simulated: true, // Tag moving demo vehicles clearly
+          };
+        });
+
+      setServices([
+        ...formattedHospitals,
+        ...formattedAmbulances,
+        ...formattedStations,
+        ...formattedResources,
+      ]);
     } catch (e) {
       console.error('Failed to load services:', e);
     } finally {
@@ -186,9 +179,9 @@ export default function NearbyHelp() {
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-white">Nearby Emergency Services</h1>
+            <h1 className="text-2xl font-bold text-white">Hyderabad Emergency Grid</h1>
             <p className="text-sm text-gray-400 mt-1">
-              Live hospital bed capacities, deployed ambulances, and emergency responder stations.
+              Verified apex hospitals, EMRI 108 ambulances, GHMC fire tenders, and police commissionerate units.
             </p>
           </div>
 
@@ -213,7 +206,7 @@ export default function NearbyHelp() {
         {/* Manual Location Form toggle */}
         {showManual && (
           <form onSubmit={handleApplyManualLocation} className="p-4 bg-slate-950/80 rounded-xl border border-slate-800 flex flex-wrap items-center gap-3 text-sm">
-            <span className="text-gray-300 font-medium">Set Custom Location:</span>
+            <span className="text-gray-300 font-medium">Set Custom Coordinates:</span>
             <input
               type="number"
               step="0.0001"
@@ -261,11 +254,12 @@ export default function NearbyHelp() {
               onChange={(e) => setFilter(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
             >
-              <option value="all">All Categories ({services.length})</option>
+              <option value="all">All Infrastructure ({services.length})</option>
               <option value="hospital">Hospitals</option>
               <option value="ambulance">Ambulances</option>
-              <option value="fire">Fire Stations</option>
-              <option value="police">Police Stations</option>
+              <option value="fire">Fire Stations & Tenders</option>
+              <option value="police">Police Stations & Patrols</option>
+              <option value="rescue">SDRF Disaster Rescue</option>
             </select>
           </div>
 
@@ -291,7 +285,7 @@ export default function NearbyHelp() {
       {loading ? (
         <div className="p-12 text-center text-gray-400 bg-slate-900/40 rounded-2xl border border-slate-800/80">
           <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-3 text-purple-400" />
-          <p className="text-base font-medium">Scanning area for emergency infrastructure...</p>
+          <p className="text-base font-medium">Scanning Hyderabad emergency infrastructure...</p>
         </div>
       ) : displayed.length === 0 ? (
         <div className="p-12 text-center bg-slate-900/60 rounded-2xl border border-dashed border-slate-800">
